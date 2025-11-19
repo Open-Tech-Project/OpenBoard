@@ -1,6 +1,6 @@
 # OpenBoard
 
-[![HarmonyOS](https://img.shields.io/badge/HarmonyOS-6.0-red)](https://developer.harmonyos.com/)
+[![HarmonyOS](https://img.shields.io/badge/HarmonyOS-6.0-red)](https://consumer.huawei.com/cn/harmonyos-6/)
 [![ArkTS](https://img.shields.io/badge/ArkTS-Language-blue)](https://developer.harmonyos.com/en/docs/documentation/doc-guides/arkts-get-started-0000001774119986)
 [![AppGallery](https://img.shields.io/badge/Available%20on-AppGallery-orange)](https://appgallery.huawei.com/)
 [![License](https://img.shields.io/badge/License-Open%20Source-green)](#license)
@@ -62,8 +62,7 @@ OpenBoard is built using a modular architecture with the following key component
 ### Key Components
 ```bash
 // Core keyboard structure
-- KeyboardLayout (Alphabet, Symbols1, Symbols2)
-- KeyAction system for special keys
+- KeyboardKeyData (Alphabet, Symbols, special keys)
 - Multi-language layout definitions
 - Prediction model integration
 ```
@@ -99,15 +98,14 @@ We welcome contributions from the HarmonyOS developer community! Please read our
 
 1. **Fork the repository**
    ```bash
-   git clone https://github.com/your-username/OpenBoard.git
+   git clone https://github.com/Open-Tech-Project/OpenBoard.git
    cd OpenBoard
 Open in DevEco Studio
 ```bash
    Import project into DevEco Studio
-   Configure HarmonyOS SDK
    Set up signing certificates
 ```
-Build and Test
+Build and Test thoroughly
 ```bash
 Connect HarmonyOS device or emulator
 Build project: Build > Build Project
@@ -121,6 +119,8 @@ Add language code to LanguageCode type
 Implement prediction model integration
 Update language switching logic
 ```
+Open a Pull Request
+
 📄 License
 
 This project is licensed under the GNU Affero General Public License, Version 3 or later (AGPLv3+).
@@ -140,4 +140,5 @@ AGPL Requirement: If you modify and run a version of OpenBoard as a public netwo
 ---
 
 Made with ❤️ by the OpenTech community
+
 
