@@ -2,7 +2,7 @@
 
 [![HarmonyOS](https://img.shields.io/badge/HarmonyOS-6.0-red)](https://consumer.huawei.com/cn/harmonyos-6/)
 [![ArkTS](https://img.shields.io/badge/ArkTS-Language-blue)](https://developer.harmonyos.com/en/docs/documentation/doc-guides/arkts-get-started-0000001774119986)
-[![AppGallery](https://img.shields.io/badge/Available%20on-AppGallery-orange)](https://appgallery.huawei.com/)
+[![AppGallery](https://img.shields.io/badge/Available%20on-AppGallery-orange)](https://appgallery.huawei.com/app/detail?id=com.huawei.hmsapp.appgallery&channelId=SHARE&source=appshare)
 [![License](https://img.shields.io/badge/License-Open%20Source-green)](#license)
 
 OpenBoard is a modern, open-source keyboard application designed specifically for **HarmonyOS 6.0**. Built with ArkTS, OpenBoard delivers a seamless typing experience with advanced features and multi-language support, available exclusively on Huawei AppGallery.
@@ -39,7 +39,7 @@ OpenBoard is a modern, open-source keyboard application designed specifically fo
 ### Installation
 
 1. **Download from AppGallery**
-   - Visit Huawei Harmony os AppGallery
+   - [Visit Huawei Harmony os AppGallery](https://appgallery.huawei.com/app/detail?id=com.huawei.hmsapp.appgallery&channelId=SHARE&source=appshare)
    - Search for "OpenBoard"
    - Install the application
 
@@ -140,5 +140,6 @@ AGPL Requirement: If you modify and run a version of OpenBoard as a public netwo
 ---
 
 Made with ❤️ by the OpenTech community
+
 
 
