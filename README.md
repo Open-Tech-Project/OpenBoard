@@ -32,14 +32,14 @@ OpenBoard is a modern, open-source keyboard application designed specifically fo
 ### Prerequisites
 
 - **HarmonyOS 6.0** or later
-- **DevEco Studio** (for development)
-- **ArkTS** development environment
+- **DevEco Studio 6.0.1 or later** (for development)
+- **ArkTS** development language
 ```
 
 ### Installation
 
 1. **Download from AppGallery**
-   - Visit [Huawei AppGallery](https://appgallery.huawei.com/)
+   - Visit Huawei Harmony os AppGallery
    - Search for "OpenBoard"
    - Install the application
 
@@ -52,8 +52,9 @@ OpenBoard is a modern, open-source keyboard application designed specifically fo
 
 OpenBoard is built using a modular architecture with the following key components:
 
-- **Keyboard Controller**: Core input management (`keyboardController`)
-- **Prediction Engine**: Smart word suggestions (`predictionModel`)
+- **Keyboard Controller**: Service comunicating between the keyboard and system (`inputMethodService.ets`)
+- **Keyboard Controller**: Database of keyboard layouts (`keyboardKeyData.ets`)
+- **Prediction Engine**: Smart word suggestions (`predictionModel.ets`)
 - **Layout System**: Dynamic keyboard layouts for all languages
 - **UI Components**: ArkTS-based responsive interface
 - **Input Method Extension**: HarmonyOS IME integration
@@ -120,6 +121,23 @@ Add language code to LanguageCode type
 Implement prediction model integration
 Update language switching logic
 ```
-📖 Documentation
-```bash
-API Documentation
+📄 License
+
+This project is licensed under the GNU Affero General Public License, Version 3 or later (AGPLv3+).
+
+Copyright (C) 2025 The OpenBoard Project Authors
+
+Key License Points
+
+Free Software: You are free to run, study, share, and modify this software.
+
+Full Text: The complete license is included in the file LICENSE in this repository.
+
+No Warranty: This program is provided without any warranty.
+
+AGPL Requirement: If you modify and run a version of OpenBoard as a public network service, you must prominently offer all users access to the Corresponding Source Code of your modified version.
+
+---
+
+Made with ❤️ by the OpenTech community
+
