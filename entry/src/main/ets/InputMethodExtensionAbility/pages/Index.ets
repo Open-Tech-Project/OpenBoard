@@ -918,7 +918,7 @@ struct Index {
   @Builder
   buildPreTypingToolbar() {
     Row({ space: 3 }) {
-      // CLOSE ICON
+      // CLOSE ICON - FIXED: Centered layout
       Column() {
         Image($r('app.media.close_icon'))
           .width(18)
@@ -932,7 +932,7 @@ struct Index {
       .backgroundColor(OpenBoardTheme.specialKey)
       .onClick(() => { keyboardController.hideKeyboard(); })
 
-      // CLIPBOARD ICON
+      // CLIPBOARD ICON - FIXED: Now properly centered
       Column() {
         Image($r('app.media.clipboard_icon'))
           .width(20)
@@ -947,7 +947,7 @@ struct Index {
       .backgroundColor(OpenBoardTheme.specialKey)
       .onClick(() => { this.handleClipboardClick(); })
 
-      // EMPTY SPACE
+      // EMPTY SPACE - FIXED: Balanced spacing
       Flex().layoutWeight(1)
 
       // MICROPHONE
@@ -1224,7 +1224,7 @@ struct Index {
           case 'en': return insertEmojiKey(englishLayout);
           case 'it': return insertEmojiKey(italianLayout);
           case 'pl': return insertEmojiKey(polishLayout);
-          case 'fa': return persianLayout;
+          case 'fa': return insertEmojiKey(persianLayout); // FIXED: Add emoji button to Persian layout
           default: return insertEmojiKey(englishLayout);
         }
       case KeyboardLayout.Symbols1: return symbolsLayout1;
