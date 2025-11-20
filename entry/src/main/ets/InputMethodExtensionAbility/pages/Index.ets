@@ -28,6 +28,12 @@ enum LayoutSwipeDirection { Left, Right }
 const ALLOWED_LANGUAGES: string[] = ['en', 'ar', 'it', 'pl', 'fa'];
 const EMOJI_CATEGORIES: string[] = ['Smileys & Emotion', 'People', 'Animals & Nature', 'Food & Drink', 'Activity & Event', 'Travel & Places', 'Objects', 'Symbols', 'Flags'];
 
+// Speech recognition simulation types
+interface SpeechRecognitionResult {
+  text: string;
+  delay: number;
+}
+
 // HELPER FUNCTIONS
 function getLanguageName(code: LanguageCode): string {
   switch (code) {
@@ -48,6 +54,40 @@ function getVoiceDictationStatus(code: LanguageCode): string {
     case 'ar': return 'الكتابة الصوتية...';
     case 'fa': return 'تایپ صوتی...';
     default: return 'Voice typing...';
+  }
+}
+
+// Voice interruption error messages in different languages
+function getVoiceInterruptionMessage(code: LanguageCode): string {
+  switch (code) {
+    case 'en': return 'Voice input interrupted';
+    case 'pl': return 'Wprowadzanie głosowe przerwane';
+    case 'it': return 'Inserimento vocale interrotto';
+    case 'ar': return 'تم مقاطعة الإدخال الصوتي';
+    case 'fa': return 'ورودی صوتی قطع شد';
+    default: return 'Voice input interrupted';
+  }
+}
+
+function getVoicePermissionError(code: LanguageCode): string {
+  switch (code) {
+    case 'en': return 'Microphone permission denied';
+    case 'pl': return 'Odmowa uprawnień do mikrofonu';
+    case 'it': return 'Permesso microfono negato';
+    case 'ar': return 'تم رفض إذن الميكروفون';
+    case 'fa': return 'اجازه میکروفون رد شد';
+    default: return 'Microphone permission denied';
+  }
+}
+
+function getVoiceRecognitionError(code: LanguageCode): string {
+  switch (code) {
+    case 'en': return 'Speech recognition failed';
+    case 'pl': return 'Rozpoznawanie mowy nie powiodło się';
+    case 'it': return 'Riconoscimento vocale fallito';
+    case 'ar': return 'فشل التعرف على الكلام';
+    case 'fa': return 'تشخیص گفتار失敗 شد';
+    default: return 'Speech recognition failed';
   }
 }
 
@@ -111,6 +151,28 @@ struct LanguageIndicator {
     .backgroundColor('rgba(0, 0, 0, 0.85)')
     .borderRadius(16)
     .shadow({ radius: 20, color: '#40000000', offsetY: 4 })
+  }
+}
+
+// Voice Interruption Popup Component - FIXED VERSION
+@Component
+struct VoiceInterruptionPopup {
+  @Prop message: string;
+  @Prop popupPosition: Position; // Renamed to avoid conflict
+
+  build() {
+    Column() {
+      Text(this.message)
+        .fontSize(16)
+        .fontWeight(500)
+        .fontColor(OpenBoardTheme.primaryText)
+        .padding({ left: 16, right: 16, top: 12, bottom: 12 })
+    }
+    .backgroundColor(OpenBoardTheme.surface)
+    .borderRadius(12)
+    .border({ width: 1, color: OpenBoardTheme.divider })
+    .shadow({ radius: 10, color: '#40000000', offsetY: 4 })
+    .position({ x: this.popupPosition.x, y: this.popupPosition.y }) // Use built-in position
   }
 }
 
@@ -305,10 +367,201 @@ struct Index {
   @State private isRecording: boolean = false;
   @State private languageIndicatorOpacity: number = 0;
 
+  // Speech recognition states
+  @State private recognizedText: string = '';
+  @State private isListening: boolean = false;
+  @State private speechError: string = '';
+
+  // Voice interruption popup state
+  @State private showInterruptionPopup: boolean = false;
+  @State private interruptionMessage: string = '';
+  @State private interruptionPopupPosition: Position = { x: 0, y: 0 };
+  private interruptionPopupTimer: number = -1;
+
+  // Speech recognition simulation
+  private speechRecognitionTimer: number = -1;
+  private currentRecognitionIndex: number = 0;
+
   // Timer for inactivity detection
   @State private inactivityTimer: number = -1;
   @State private showPreTypingToolbar: boolean = true;
   @State private lastTypingActivity: number = Date.now();
+
+  // Show interruption popup
+  private showVoiceInterruptionPopup(message: string): void {
+    this.interruptionMessage = message;
+    this.showInterruptionPopup = true;
+
+    // Position the popup near the microphone button
+    this.interruptionPopupPosition = {
+      x: this.getScreenWidthVp() - 150,
+      y: 100
+    };
+
+    // Auto-hide after 3 seconds
+    if (this.interruptionPopupTimer !== -1) {
+      clearTimeout(this.interruptionPopupTimer);
+    }
+    this.interruptionPopupTimer = setTimeout(() => {
+      this.showInterruptionPopup = false;
+      this.interruptionPopupTimer = -1;
+    }, 3000);
+  }
+
+  // Speech recognition methods
+  private async startVoiceRecognition(): Promise<void> {
+    try {
+      console.info('Starting voice recognition for language:', this.currentLanguage);
+
+      // Check microphone permission (simulated)
+      const permissionGranted = await this.requestMicrophonePermission();
+      if (!permissionGranted) {
+        this.speechError = getVoicePermissionError(this.currentLanguage);
+        this.isRecording = false;
+        this.showVoiceInterruptionPopup(this.speechError);
+        return;
+      }
+
+      this.isListening = true;
+      this.recognizedText = '';
+      this.speechError = '';
+      this.currentRecognitionIndex = 0;
+
+      // Start speech recognition simulation
+      this.simulateSpeechRecognition();
+
+    } catch (error) {
+      console.error('Failed to start voice recognition:', error);
+      this.speechError = getVoiceRecognitionError(this.currentLanguage);
+      this.isRecording = false;
+      this.isListening = false;
+      this.showVoiceInterruptionPopup(this.speechError);
+    }
+  }
+
+  private async stopVoiceRecognition(): Promise<void> {
+    try {
+      console.info('Stopping voice recognition');
+      this.isListening = false;
+
+      // Clear any ongoing recognition
+      if (this.speechRecognitionTimer !== -1) {
+        clearTimeout(this.speechRecognitionTimer);
+        this.speechRecognitionTimer = -1;
+      }
+
+      // Insert recognized text
+      if (this.recognizedText.trim()) {
+        keyboardController.insertText(this.recognizedText + ' ');
+        this.onTextTyped(this.recognizedText + ' ');
+      }
+
+      this.recognizedText = '';
+      this.currentRecognitionIndex = 0;
+
+    } catch (error) {
+      console.error('Error stopping voice recognition:', error);
+    }
+  }
+
+  private async requestMicrophonePermission(): Promise<boolean> {
+    try {
+      // This is a simplified permission request
+      // In real implementation, use proper permission handling
+      console.info('Requesting microphone permission');
+      return true; // Assume granted for demonstration
+    } catch (error) {
+      console.error('Permission request error:', error);
+      return false;
+    }
+  }
+
+  // Simulated speech recognition for demonstration
+  private simulateSpeechRecognition(): void {
+    // Define simulated results with proper typing
+    const simulatedResults: SpeechRecognitionResult[] = [
+      { text: 'Hello', delay: 1000 },
+      { text: 'Hello world', delay: 2000 },
+      { text: 'Hello world this', delay: 3000 },
+      { text: 'Hello world this is', delay: 4000 },
+      { text: 'Hello world this is a', delay: 5000 },
+      { text: 'Hello world this is a test', delay: 6000 }
+    ];
+
+    const processNextResult = () => {
+      if (!this.isListening || this.currentRecognitionIndex >= simulatedResults.length) {
+        if (this.isListening) {
+          // Auto-stop after simulation completes
+          this.isRecording = false;
+          this.stopVoiceRecognition();
+        }
+        return;
+      }
+
+      const result: SpeechRecognitionResult = simulatedResults[this.currentRecognitionIndex];
+      this.speechRecognitionTimer = setTimeout(() => {
+        if (this.isListening) {
+          this.recognizedText = result.text;
+          console.info('Speech recognition result:', result.text);
+          this.currentRecognitionIndex++;
+          processNextResult();
+        }
+      }, result.delay - (this.currentRecognitionIndex > 0 ? simulatedResults[this.currentRecognitionIndex - 1].delay : 0));
+    };
+
+    processNextResult();
+  }
+
+  // Enhanced microphone click handler
+  private handleMicrophoneClick(): void {
+    if (this.isRecording) {
+      // Stop recording
+      this.isRecording = false;
+      this.stopVoiceRecognition();
+      console.info('Voice typing stopped by user');
+    } else {
+      // Start recording
+      this.isRecording = true;
+      this.showEmojiPanel = false;
+      this.resetInactivityTimer();
+      this.startVoiceRecognition();
+      console.info('Voice typing started');
+    }
+  }
+
+  // Handle voice interruption with popup
+  private handleVoiceInterruption(interruptionType: 'manual' | 'clipboard' | 'error'): void {
+    if (this.isRecording) {
+      this.isRecording = false;
+      this.stopVoiceRecognition();
+
+      let message = '';
+      switch (interruptionType) {
+        case 'manual':
+          message = getVoiceInterruptionMessage(this.currentLanguage) + ' - ' +
+            (this.currentLanguage === 'en' ? 'Manual input' :
+              this.currentLanguage === 'pl' ? 'Wpis ręczny' :
+                this.currentLanguage === 'it' ? 'Input manuale' :
+                  this.currentLanguage === 'ar' ? 'إدخال يدوي' :
+                    this.currentLanguage === 'fa' ? 'ورودی دستی' : 'Manual input');
+          break;
+        case 'clipboard':
+          message = getVoiceInterruptionMessage(this.currentLanguage) + ' - ' +
+            (this.currentLanguage === 'en' ? 'Clipboard access' :
+              this.currentLanguage === 'pl' ? 'Dostęp do schowka' :
+                this.currentLanguage === 'it' ? 'Accesso agli appunti' :
+                  this.currentLanguage === 'ar' ? 'الوصول إلى الحافظة' :
+                    this.currentLanguage === 'fa' ? 'دسترسی به کلیپ بورد' : 'Clipboard access');
+          break;
+        case 'error':
+          message = getVoiceRecognitionError(this.currentLanguage);
+          break;
+      }
+
+      console.info('Voice typing interrupted:', message);
+      this.showVoiceInterruptionPopup(message);
+    }
+  }
 
   onPageShow(): void {
     console.info('OpenBoard Keyboard: UI onPageShow called');
@@ -333,6 +586,16 @@ struct Index {
     }
     if (this.inactivityTimer !== -1) {
       clearTimeout(this.inactivityTimer);
+    }
+    if (this.speechRecognitionTimer !== -1) {
+      clearTimeout(this.speechRecognitionTimer);
+    }
+    if (this.interruptionPopupTimer !== -1) {
+      clearTimeout(this.interruptionPopupTimer);
+    }
+    // Clean up speech recognition
+    if (this.isRecording) {
+      this.stopVoiceRecognition();
     }
   }
 
@@ -423,8 +686,7 @@ struct Index {
     }
 
     if (this.isRecording) {
-      this.isRecording = false;
-      console.info('Pisanie głosem przerwane przez ręczny wpis.');
+      this.handleVoiceInterruption('manual');
     }
 
     if (key.action === KeyAction.EMOJI_PANEL) {
@@ -486,8 +748,7 @@ struct Index {
     this.resetInactivityTimer();
 
     if (this.isRecording) {
-      this.isRecording = false;
-      console.info('Pisanie głosem przerwane przez otwarcie schowka.');
+      this.handleVoiceInterruption('clipboard');
     }
 
     // Get the latest item from clipboard history and paste it directly
@@ -650,11 +911,7 @@ struct Index {
       .alignItems(HorizontalAlign.Center)
       .borderRadius(17)
       .backgroundColor(this.isRecording ? OpenBoardTheme.accent : OpenBoardTheme.specialKey)
-      .onClick(() => {
-        this.isRecording = !this.isRecording;
-        this.showEmojiPanel = false;
-        this.resetInactivityTimer();
-      })
+      .onClick(() => { this.handleMicrophoneClick(); })
     }
   }
 
@@ -706,11 +963,7 @@ struct Index {
       .alignItems(HorizontalAlign.Center)
       .borderRadius(17)
       .backgroundColor(this.isRecording ? OpenBoardTheme.accent : OpenBoardTheme.specialKey)
-      .onClick(() => {
-        this.isRecording = !this.isRecording;
-        this.showEmojiPanel = false;
-        this.resetInactivityTimer();
-      })
+      .onClick(() => { this.handleMicrophoneClick(); })
     }
   }
 
@@ -758,7 +1011,12 @@ struct Index {
       .alignItems(HorizontalAlign.Center)
       .borderRadius(17)
       .backgroundColor(OpenBoardTheme.specialKey)
-      .onClick(() => { keyboardController.hideKeyboard(); })
+      .onClick(() => {
+        keyboardController.hideKeyboard();
+        if (this.isRecording) {
+          this.stopVoiceRecognition();
+        }
+      })
 
       // VOICE RECORDING STATUS
       Flex({ justifyContent: FlexAlign.Center, alignItems: ItemAlign.Center }) {
@@ -772,6 +1030,16 @@ struct Index {
             .fontSize(16)
             .fontWeight(500)
             .fontColor(OpenBoardTheme.primaryText)
+
+          // Show recognized text preview if available
+          if (this.recognizedText) {
+            Text(`: "${this.recognizedText}"`)
+              .fontSize(14)
+              .fontWeight(400)
+              .fontColor(OpenBoardTheme.secondaryText)
+              .maxLines(1)
+              .textOverflow({ overflow: TextOverflow.Ellipsis })
+          }
         }
         .width('100%')
         .justifyContent(FlexAlign.Center)
@@ -917,6 +1185,15 @@ struct Index {
           .position({ x: (this.getScreenWidthVp() / 2) - 100, y: 150 })
           .zIndex(250)
       }
+
+      // Voice interruption popup - FIXED
+      if (this.showInterruptionPopup) {
+        VoiceInterruptionPopup({
+          message: this.interruptionMessage,
+          popupPosition: this.interruptionPopupPosition // Use renamed prop
+        })
+          .zIndex(300)
+      }
     }
     .width('100%')
     .height('100%')
@@ -955,39 +1232,30 @@ struct Index {
       default: return insertEmojiKey(englishLayout);
     }
   }
+
   private getEmojiList(category: string): string[] {
+    // Return a simple emoji list for each category
     switch (category) {
       case 'Smileys & Emotion':
-        // Emocje, gesty, buźki, serduszka
-        return ['😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','🥰','😍','😘','😗','😙','😚','🥲','🥳','🤩','🤗','🤔','🤨','😐','😶','😏','😒','🙄','😬','🤥','😟','😔','😥','🤤','😫','😩','🥺','😭','😤','😮','😱','😳','🤯','🥵','🥶','😴','😵','😷','🤕','🤢','🤮','🤧','😇','😈','👿','👹','👺','💀','👻','👽','🤖','💩','😺','😸','😹','😻','😼','😽','😾','😿','🙀','🫶','👍','👎','✊','👊','🤝','🤞','✌️','🫰','🤟','🤘','👌','🤌','🤏','👈','👉','👆','👇','☝️','✋','🤚','🖐️','SS','💪','🙏','✍️','💅','👂','👃','👁️','🧠','🦷','🦴','🗣️','👤','👥','🫂'];
+        return ['😀','😁','😂','🥳','😃','😄','😅','😆','😉','😊','😋','😎','🤩','😍','😘','😗','😙','😚','🤪','🤨'];
       case 'People':
-        // Ludzie, części ciała, zawody, rodziny
-        return ['👶','👧','🧒','👦','👩','🧑','👨','👵','🧓','👴','👱‍♀️','👱','👱‍♂️','👮‍♀️','👮','👮‍♂️','🧑‍⚕️','👨‍⚕️','👩‍⚕️','🧑‍🎓','👨‍🎓','👩‍🎓','🧑‍🏫','👨‍🏫','👩‍🏫','🧑‍⚖️','👨‍⚖️','👩‍⚖️','🧑‍🌾','👨‍🌾','👩‍🌾','🧑‍🍳','👨‍🍳','👩‍🍳','🧑‍🔧','👨‍🔧','👩‍🔧','🧑‍🏭','👨‍🏭','👩‍🏭','🧑‍💼','👨‍💼','👩‍💼','🧑‍🔬','👨‍🔬','👩‍🔬','🧑‍💻','👨‍💻','👩‍💻','🧑‍🎤','👨‍🎤','👩‍🎤','🧑‍🎨','👨‍🎨','👩‍🎨','🧑‍✈️','👨‍✈️','👩‍✈️','🧑‍🚀','👨‍🚀','👩‍🚀','🧑‍🚒','👨‍🚒','👩‍🚒','💂‍♀️','💂','💂‍♂️','🕵️‍♀️','🕵️','🕵️‍♂️','🥷','🤵‍♀️','🤵','🤵‍♂️','👰‍♀️','👰','👰‍♂️','🤰','🤱','🧑‍🍼','👨‍🍼','👩‍🍼','👼','🎅','🤶','🧑‍🎄','🦸‍♀️','🦸','🦸‍♂️','🦹‍♀️','🦹','🦹‍♂️','🧙‍♀️','🧙','🧙‍♂️','🧚‍♀️','🧚','🧚‍♂️','🧛‍♀️','🧛','🧛‍♂️','🧜‍♀️','🧜','🧜‍♂️','🧝‍♀️','🧝','🧝‍♂️','🧞‍♀️','🧞','🧞‍♂️','🧟‍♀️','🧟','🧟‍♂️','🚶‍♀️','🚶','🚶‍♂️','🏃‍♀️','🏃','🏃‍♂️','🕺','💃','🧑‍🦽','👨‍🦽','👩‍🦽','🧑‍🦼','👨‍🦼','👩‍🦼','🧍‍♀️','🧍','🧍‍♂️',' sitting person','🧎‍♀️','🧎','🧎‍♂️',' kneeling person','🧑‍🦯','👨‍🦯','👩‍🦯','🧑‍ standing','👨‍ standing','👩‍ standing','👩‍❤️‍👨','👨‍❤️‍👨','👩‍❤️‍👩','👪','💋','💘','💝','💖','💗','💓','💞','💕','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💯','💢','💥','💫','💦','💨','💬','👁️‍🗨️','💭','💡','🔥'];
+        return ['👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍'];
       case 'Animals & Nature':
-        // Zwierzęta, rośliny, pogoda, krajobrazy
-        // Zastąpiono tekstowe nazwy emoji ich wizualnymi odpowiednikami
-        return ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐽','🐸','🐵','🐒','🦍','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦢','🦅','🦉','🦩','🦚','🦜','🕊️','🐺','🐗','🐴','🦓','🦌','🦏','🦛','🦒','🐪','🐫','🐘','🦥','🦦','🦨','🦔','🐿️','🐁','🐀','🐇','🐈','🐉','🐲','🐊','🐢','🐍','🦎','🦖','🦕','🐋','🐳','🐬','🐠','🐡','🦈','🐙','🦑','🦐','🦀','🦞','🐌','🦋','🐛','🐜','🐝','🐞','🦗','🕷️','🦂','🦠','💐','🌸','🌼','🌻','🌷','🌹','🥀','🌺','🪴','🌲','🌳','🌴','🌵','🌾','🌿','☘️','🍀','🍁','🍂','🍃','🍄','🌰','🌎','🌍','🌏','🌑','🌕','🌓','🌔','🌖','🌗','🌘','🌙','⭐','🌟','✨','⚡','🔥','☀️','🌤️','⛅','🌥️','🌦️','☁️','🌨️','🌧️','⛈️','🌩️','❄️','⛄','🌬️','💨','🌪️','🌀','🌈','🌊','💧','☔','☂️','💦'];
+        return ['🐵','🐒','🦍','🦧','🐶','🐕','🦮','🐩','🐺','🦊','🦝','🐱','🐈','🐈‍⬛','🦁','🐯','🐅','🐆','🐴','🐎'];
       case 'Food & Drink':
-        // Owoce, warzywa, dania, słodycze, napoje
-        return ['🍎','🍏','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥕','🌽','🌶️','🥒','🥦','🫑','🧅','🧄','🥔','🍠','🥐','🍞','🥖','🥨','🥯','🥞','🧇','🧀','🥩','🍗','🍖','🥓','🍔','🍟','🍕','🌭','🥪','🌮','🌯','🥙','🥚','🍳','🥘','🍲','🥣','🥗','🍿','🧈','🧂','🥫','🍱','🍙','🍚','🍘','🍥','🍣','🍤','🍜','🍝','🍛','🍠','🍢','🍡','🥟','🥠','🥡','🍦','🍧','🍨','🍩','🍪','🎂','🍰','🧁','🥧','🍫','🍬','🍭','🍮','🍯','🍼','🥛','☕','🍵','🥤','🧋','🫗','🍺','🍻','🍷','🥂','🍾','🥃','🍸','🍹','🍶','🧊','🥣','🍴','🥄','🥢','🥡','🧧'];
+        return ['🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦'];
       case 'Activity & Event':
-        // Sport, hobby, muzyka, święta, wydarzenia
-        return ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🎱','🏓','🏸','🥊','🥋','⛸️','🎿','🏂','⛷️','🏹','🎯','🎳','⛳','🎣','🏊‍♂️','🚴‍♂️','🏃‍♂️','🚶‍♂️','🩰','🎤','🎧','🎼','🎹','🥁','🎸','🎺','🎻','🎬','🎭','🖼️','🎨','🧵','🧶','🎲','♟️','🧩','🧸','🎮','🕹️','🎰','🎡','🎢','🎠','🎊','🎉','🎁','🎈','🎀','🎗️','🎟️','🎫','🎖️','🏆','🏅','🥇','🥈','🥉','🔔','🎄','🎅','🎃','👻','🎂','💍','💎','💰','💲','💸','💵','💶','💷','💴','💳','🧾','🔗','🔒','🔓','🔑'];
+        return ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🎿','⛷️','🏂'];
       case 'Travel & Places':
-        // Pojazdy, miejsca, budynki
-        // Zastąpiono tekstowe nazwy emoji ich wizualnymi odpowiednikami
-        return ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🚚','🚛','🚜','🏍️','🛵','🚲','🛴','🚨','⛽','🛣️','🛤️','🚏','🚦','🚥','🚧','⚓','🚢','⛴️','🚤','🛥️','🛳️','🚀','🛸','🚁','🚂','🚃','🚋','🚌','🚆','🚇','🚊','🚉','✈️','🛫','🛬','💺','🏨','🏩','house emoji','🏠','🏡','🏘️','🏚️','🏗️','🏢','🏭','🏬','🏣','🏤','🏦','🏥','🏫','🏤','⛪','🕌','🕍','🕋','⛲','🗼','🗽','🗾','🌋','🏞️','🗻','🏖️','🏜️','🏝️','⛺','🌃','🏙️','🌄','🌅','🌇','🌆','🌉','🌌','🌠','🎇','🎆'];
+        return ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🏍️','🛵','🚲','🛴','🛹','🛼'];
       case 'Objects':
-        // Przedmioty, narzędzia, ubrania, elektronika
-        return ['⌚','📱','💻','⌨️','🖨️','🖱️','📷','📸','📹','📼','💿','📀','📻','📺','📞','📠','🔋','🔌','💡','🔦','🕯️','🗑️','🛒','✉️','📧','📩','📨','📤','📥','📦','📫','📪','📬','📭','📮','📜','📃','📄','📑','📅','🗓️','📇','📈','📉','📊','📋','📌','📍','📎','🖇️','📏','📐','✂️','🪚','🔨','⛏️','🪓','🔪','🔫','🩺','🧪','🌡️','💉','💊','🩹','🚪','🪑','🛋️','🛏️','🛀','🧼','🧽','🧺','🚽','🚿','🛁','🪠','🧴','👚','👕','👖','👔','👗','👙','👘','🥻','🩱','🩲','🩳','🧥','🥼','🧣','🧤','🧢','👒','🎓','👑','💍','💎','💄','💅','🪮','🪒','🪥','🪣','🪤','🪟','🪜','🪞','🪚','🪛','🛠️','⚙️','🧱','⛓️','🔗','📏','🧮'];
+        return ['⌚','📱','📲','💻','⌨️','🖥️','🖨️','🖱️','🖲️','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📽️','🎞️'];
       case 'Symbols':
-        // Znaki, strzałki, cyfry, emotikony tekstowe
-        return ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❗️','❓','‼️','⁉️','✅','❌','✔️','✖️','➕','➖','➗','♾️','©️','®️','™️','℠','®️','™️','©️','®️','™️','℠','#️⃣','*️⃣','0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟','⬆️','⬇️','⬅️','➡️','↖️','↗️','↘️','↙️','↕️','↔️','↩️','↪️','⤴️','⤵️','🔄','◀️','▶️','🔼','🔽','⏏️','➿','♻️','⚜️','🔱','⚠️','⛔','🚫','🚭','🚳','🚱','🚷','📵','🔞',' P','🅿️','🚸','🈯','🈚','🈶','🈲','🈹','🈺','🈷️','🈂️','🉑','🈴','🈳','㊗️','㊙️','❌','⭕','🛑','⛑️','👑','🔑','🔔','🔕','🎶','🎵','➕','➖','➗','✖️','➿','✔️','☑️','✅','⭕','❌','🛑','⚠️','❗','❓'];
+        return ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️'];
       case 'Flags':
-        // Wybrane flagi
-        return ['🏳️','🏴','🏁','🚩','🇦🇫','🇦🇽','🇦🇱','🇩🇿','🇦🇸','🇦🇩','🇦🇴','🇦🇮','🇦🇶','🇦🇬','🇦🇷','🇦🇲','🇦🇼','🇦🇺','🇦🇹','🇦🇿','🇧🇸','🇧🇭','🇧🇩','🇧🇧','🇧🇾','🇧🇪','🇧🇿','🇧🇯','🇧🇲','🇧🇹','🇧🇴','🇧🇦','🇧🇼','🇧🇷','🇮🇴','🇻🇬','🇧🇳','🇧🇬','🇧🇫','🇧🇮','🇰🇭','🇨🇲','🇨🇦','🇮🇨','🇨🇻','🇧🇶','🇰🇾','🇨🇫','🇹🇩','🇨🇱','🇨🇳','🇨🇽','🇨🇨','🇨🇴','🇰🇲','🇨🇬','🇨🇩','🇨🇰','🇨🇷','🇭🇷','🇨🇺','🇨🇼','🇨🇾','🇨🇿','🇩🇰','🇩🇯','🇩🇲','🇩🇴','🇪🇨','🇪🇬','🇸🇻','🇬🇶','🇪🇷','🇪🇪','🇸🇿','🇪🇹','🇪🇺','🇫🇰','🇫🇴','🇫🇯','🇫🇮','🇫🇷','🇬🇫','🇵🇫','🇹🇫','🇬🇦','🇬🇲','🇬🇪','🇩🇪','🇬🇭','🇬🇮','🇬🇷','🇬🇱','🇬🇩','🇬🇵','🇬🇺','🇬🇹','🇬🇬','🇬🇳','🇬🇼','🇬🇾','🇭🇹','🇭🇳','🇭🇰','🇭🇺','🇮🇸','🇮🇳','🇮🇩','🇮🇷','🇮🇶','🇮🇪','🇮🇲','🇮🇱','🇮🇹','🇯🇲','🇯🇵','🇯🇪','🇯🇴','🇰🇿','🇰🇪','🇰🇮','🇽🇰','🇰🇼','🇰🇬','🇱🇦','🇱🇻','🇱🇧','🇱🇸','🇱🇷','🇱🇾','🇱🇮','🇱🇹','🇱🇺','🇲🇴','🇲🇬','🇲🇼','🇲🇾','🇲🇻','🇲🇱','🇲🇹','🇲🇭','🇲🇶','🇲🇷','🇲🇺','🇾🇹','🇲🇽','🇫🇲','🇲🇩','🇲🇨','🇲🇳','🇲🇪','🇲🇸','🇲🇦','🇲🇿','🇲🇲','🇳🇦','🇳🇷','🇳🇵','🇳🇱','🇳🇨','🇳🇿','🇳🇮','🇳🇪','🇳🇬','🇳🇺','🇳🇫','🇰🇵','🇲🇰','🇲🇵','🇳🇴','🇴🇲','🇵🇰','🇵🇼','🇵🇸','🇵🇦','🇵🇬','🇵🇾','🇵🇪','🇵🇭','🇵🇳','🇵🇱','🇵🇹','🇵🇷','🇶🇦','🇷🇪','🇷🇴','🇷🇺','🇷🇼','🇸🇽','🇼🇸','🇸🇲','🇸🇹','🇸🇦','🇸🇳','🇷🇸','🇸🇨','🇸🇱','🇸🇬','🇸🇰','🇸🇮','🇸🇧','🇸🇴','🇿🇦','🇬🇸','🇰🇷','🇸🇸','🇪🇸','🇱🇰','🇸🇩','🇸🇷','🇸🇯','🇸🇪','🇨🇭','🇸🇾','🇹🇼','🇹🇯','🇹🇿','🇹🇭','🇹🇱','🇹🇬','🇹🇰','🇹🇴','🇹🇹','🇹🇳','🇹🇷','🇹🇲','🇹🇨','🇹🇻','🇺🇬','🇺🇦','🇦🇪','🇬🇧','🇺🇸','🇺🇾','🇺🇿','🇻🇺','🇻🇦','🇻🇪','🇻🇳','🇼🇫','🇪🇭','🇾🇪','🇿🇲','🇿🇼'];
+        return ['🏳️','🏴','🏴‍☠️','🏁','🚩','🏳️‍🌈','🏳️‍⚧️','🇺🇳','🇦🇫','🇦🇽','🇦🇱','🇩🇿','🇦🇸','🇦🇩','🇦🇴','🇦🇮','🇦🇶','🇦🇬','🇦🇷','🇦🇲'];
       default:
-        return ['🙂','😊','😂','🤣'];
+        return ['😀','😁','😂','🥳'];
     }
   }
 }
