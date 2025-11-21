@@ -1,3 +1,4 @@
+<img src="Open-Tech-Project/OpenTube_readme/blob/main/Group%20335.png" align="left" width="60" height="60" alt="Project Logo">
 # OpenBoard
 
 [![HarmonyOS](https://img.shields.io/badge/HarmonyOS-6.0-red)](https://consumer.huawei.com/cn/harmonyos-6/)
@@ -140,6 +141,7 @@ AGPL Requirement: If you modify and run a version of OpenBoard as a public netwo
 ---
 
 Made with ❤️ by the OpenTech community
+
 
 
 
