@@ -1203,7 +1203,7 @@ struct Index {
     const insertEmojiKey = (layout: KeyData[][] | undefined): KeyData[][] => {
       if (!layout || layout.length < 4) return layout || [];
       const lastRow = layout[layout.length - 1].slice();
-      const commaIndex = lastRow.findIndex(k => k.mainValue === ',');
+      const commaIndex = lastRow.findIndex(k => k.mainValue === ',' || k.mainValue === '،');
       if (commaIndex !== -1 && lastRow[commaIndex + 1]?.action === KeyAction.Space) {
         lastRow.splice(commaIndex + 1, 0, EMOJI_KEY_DATA);
         const spaceKey = lastRow[commaIndex + 2];
