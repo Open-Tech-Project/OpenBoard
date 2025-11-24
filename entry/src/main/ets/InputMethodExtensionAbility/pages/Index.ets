@@ -16,6 +16,7 @@ import keyboardController from '../model/KeyboardController';
 import predictionModel from '../model/PredictionModel';
 import { display } from '@kit.ArkUI';
 import { inputMethodEngine } from '@kit.IMEKit';
+import pasteboard from '@ohos.pasteboard';
 
 const EMOJI_KEY_DATA: KeyData = { mainValue: 'icon', secondaryValue: undefined, action: KeyAction.EMOJI_PANEL, flex: 1.2, shiftValue: undefined };
 
@@ -154,11 +155,10 @@ struct LanguageIndicator {
   }
 }
 
-// Voice Interruption Popup Component - FIXED VERSION
 @Component
 struct VoiceInterruptionPopup {
   @Prop message: string;
-  @Prop popupPosition: Position; // Renamed to avoid conflict
+  @Prop popupPosition: Position;
 
   build() {
     Column() {
@@ -172,7 +172,7 @@ struct VoiceInterruptionPopup {
     .borderRadius(12)
     .border({ width: 1, color: OpenBoardTheme.divider })
     .shadow({ radius: 10, color: '#40000000', offsetY: 4 })
-    .position({ x: this.popupPosition.x, y: this.popupPosition.y }) // Use built-in position
+    .position({ x: this.popupPosition.x, y: this.popupPosition.y })
   }
 }
 
@@ -184,6 +184,8 @@ struct KeyView {
   @Prop availableLanguages: LanguageCode[];
   onKeyPress: (key: KeyData) => void = () => {};
   onKeyLongPress: (key: KeyData, position: Position) => void = () => {};
+  onKeyLongPressDrag: (position: Position) => void = () => {};
+  onKeyLongPressEnd: () => void = () => {};
   onKeyContinuousPressStart: (key: KeyData) => void = () => {};
   onKeyContinuousPressEnd: (key: KeyData) => void = () => {};
   onSwipe?: (direction: LayoutSwipeDirection) => void;
@@ -198,11 +200,9 @@ struct KeyView {
 
   getDisplayValue(): string {
     if (this.keyData.action === KeyAction.Shift) {
-      // Shift key will use icon, so return empty string
       return '';
     }
     if (this.keyData.action === KeyAction.Enter) {
-      // For search and send modes, show icon instead of text
       if (this.enterKeyLabel === 'Search' || this.enterKeyLabel === 'Send') {
         return '';
       }
@@ -225,49 +225,51 @@ struct KeyView {
 
   build() {
     Flex({ justifyContent: FlexAlign.Center, alignItems: ItemAlign.Center }) {
-      Column() {
+      Stack({ alignContent: Alignment.TopEnd }) {
+        Column() {
+          if (this.keyData.mainValue === 'icon' ||
+            (this.keyData.action === KeyAction.Shift) ||
+            (this.keyData.action === KeyAction.Enter && (this.enterKeyLabel === 'Search' || this.enterKeyLabel === 'Send'))) {
+
+            if (this.keyData.action === KeyAction.Shift) {
+              Image($r('app.media.shift_icon'))
+                .width(20)
+                .height(20)
+                .fillColor(this.shiftState !== ShiftState.Off ? OpenBoardTheme.accent : OpenBoardTheme.primaryText)
+            } else if (this.keyData.action === KeyAction.Enter && this.enterKeyLabel === 'Search') {
+              Image($r('app.media.search_icon'))
+                .width(20)
+                .height(20)
+            } else if (this.keyData.action === KeyAction.Enter && this.enterKeyLabel === 'Send') {
+              Image($r('app.media.send_icon'))
+                .width(20)
+                .height(20)
+            } else if (this.keyData.mainValue === 'icon') {
+              Image($r('app.media.emoji_icon'))
+                .width(20)
+                .height(20)
+            }
+          } else {
+            Text(this.getDisplayValue())
+              .fontSize(20)
+              .fontWeight(this.keyData.action === KeyAction.Char ? 400 : 500)
+              .fontColor(OpenBoardTheme.primaryText)
+          }
+        }
+        .width('100%')
+        .height('100%')
+        .justifyContent(FlexAlign.Center)
+        .alignItems(HorizontalAlign.Center)
+
         if (this.keyData.secondaryValue) {
           Text(this.keyData.secondaryValue.split(',')[0])
-            .fontSize(12)
+            .fontSize(10)
             .fontColor(OpenBoardTheme.secondaryText)
-            .lineHeight(14)
-        }
-
-        if (this.keyData.mainValue === 'icon' ||
-          (this.keyData.action === KeyAction.Shift) ||
-          (this.keyData.action === KeyAction.Enter && (this.enterKeyLabel === 'Search' || this.enterKeyLabel === 'Send'))) {
-
-          // Show icons for special keys
-          if (this.keyData.action === KeyAction.Shift) {
-            Image($r('app.media.shift_icon'))
-              .width(20)
-              .height(20)
-              .fillColor(this.shiftState !== ShiftState.Off ? OpenBoardTheme.accent : OpenBoardTheme.primaryText)
-          } else if (this.keyData.action === KeyAction.Enter && this.enterKeyLabel === 'Search') {
-            Image($r('app.media.search_icon'))
-              .width(20)
-              .height(20)
-          } else if (this.keyData.action === KeyAction.Enter && this.enterKeyLabel === 'Send') {
-            Image($r('app.media.send_icon'))
-              .width(20)
-              .height(20)
-          } else if (this.keyData.mainValue === 'icon') {
-            Image($r('app.media.emoji_icon'))
-              .width(20)
-              .height(20)
-          }
-        } else {
-          Text(this.getDisplayValue())
-            .fontSize(this.keyData.secondaryValue ? 18 : 20)
-            .fontWeight(this.keyData.action === KeyAction.Char ? 400 : 500)
-            .fontColor(OpenBoardTheme.primaryText)
-            .lineHeight(this.keyData.secondaryValue ? 20 : 22)
+            .margin({ top: 4, right: 4 })
         }
       }
       .width('100%')
       .height('100%')
-      .justifyContent(FlexAlign.Center)
-      .alignItems(HorizontalAlign.Center)
       .backgroundColor(this.isPressed ?
         OpenBoardTheme.surface : (this.keyData.action === KeyAction.Char ? OpenBoardTheme.regularKey : OpenBoardTheme.specialKey))
       .borderRadius(8)
@@ -299,30 +301,40 @@ struct KeyView {
           }, 500);
         }
 
-        if (event.type === TouchType.Move && this.keyData.action === KeyAction.Space) {
-          const swipeDistance = Math.abs(currentPosition.x - this.touchStartX);
-          const SWIPE_THRESHOLD = 30;
+        if (event.type === TouchType.Move) {
+          if (this.longPressTriggered && this.keyData.secondaryValue) {
+            this.onKeyLongPressDrag(currentPosition);
+          }
 
-          if (!this.swipeHandled && swipeDistance > SWIPE_THRESHOLD) {
-            clearTimeout(this.longPressTimer);
-            this.longPressTriggered = true;
-            this.swipeHandled = true;
+          if (this.keyData.action === KeyAction.Space) {
+            const swipeDistance = Math.abs(currentPosition.x - this.touchStartX);
+            const SWIPE_THRESHOLD = 30;
 
-            if (this.onSwipe) {
-              const direction = (currentPosition.x - this.touchStartX) > 0
-                ? LayoutSwipeDirection.Right
-                : LayoutSwipeDirection.Left;
-              this.onSwipe(direction);
+            if (!this.swipeHandled && swipeDistance > SWIPE_THRESHOLD) {
+              clearTimeout(this.longPressTimer);
+              this.longPressTriggered = true;
+              this.swipeHandled = true;
+
+              if (this.onSwipe) {
+                const direction = (currentPosition.x - this.touchStartX) > 0
+                  ? LayoutSwipeDirection.Right
+                  : LayoutSwipeDirection.Left;
+                this.onSwipe(direction);
+              }
+
+              this.isPressed = false;
             }
-
-            this.isPressed = false;
           }
         }
 
         if (event.type === TouchType.Up || event.type === TouchType.Cancel) {
           clearTimeout(this.longPressTimer);
-          if (this.longPressTriggered && this.keyData.action === KeyAction.Backspace) {
-            this.onKeyContinuousPressEnd(this.keyData);
+          if (this.longPressTriggered) {
+            if (this.keyData.action === KeyAction.Backspace) {
+              this.onKeyContinuousPressEnd(this.keyData);
+            } else if (this.keyData.secondaryValue) {
+              this.onKeyLongPressEnd();
+            }
           } else if (event.type === TouchType.Up && !this.longPressTriggered) {
             this.onKeyPress(this.keyData);
           }
@@ -361,8 +373,6 @@ struct Index {
   @State private previousWord: string = '';
   @State private currentWord: string = '';
   @State private suggestions: string[] = ['', '', ''];
-
-  @State private clipboardHistory: string[] = ['wklej', 'kod', 'przykładowy', 'do', 'projektu', 'OpenBoard'];
 
   @State private isRecording: boolean = false;
   @State private languageIndicatorOpacity: number = 0;
@@ -466,8 +476,6 @@ struct Index {
 
   private async requestMicrophonePermission(): Promise<boolean> {
     try {
-      // This is a simplified permission request
-      // In real implementation, use proper permission handling
       console.info('Requesting microphone permission');
       return true; // Assume granted for demonstration
     } catch (error) {
@@ -605,7 +613,7 @@ struct Index {
     }
     this.inactivityTimer = setTimeout(() => {
       const timeSinceLastActivity = Date.now() - this.lastTypingActivity;
-      if (!this.isRecording && !this.showEmojiPanel && timeSinceLastActivity >= 8000) {
+      if (!this.isRecording && !this.showEmojiPanel && timeSinceLastActivity >= 5000) {
         this.showPreTypingToolbar = true;
       }
       this.startInactivityTimer(); // Continue checking
@@ -679,8 +687,32 @@ struct Index {
     }
   }
 
+  private handleLongPressDrag(position: Position): void {
+    if (!this.longPressInfo || !this.longPressInfo.key.secondaryValue) return;
+
+    const secondaryValues = this.longPressInfo.key.secondaryValue.split(',');
+    const popupWidth = secondaryValues.length * this.popupKeyWidth;
+    const startX = this.popupPosition.x;
+
+    const relativeX = position.x - startX;
+    let index = Math.floor(relativeX / this.popupKeyWidth);
+
+    if (index < 0) index = 0;
+    if (index >= secondaryValues.length) index = secondaryValues.length - 1;
+
+    this.hoveredChar = secondaryValues[index];
+  }
+
+  private handleLongPressEnd(): void {
+    if (this.longPressInfo && this.hoveredChar) {
+      keyboardController.insertText(this.hoveredChar);
+      this.onTextTyped(this.hoveredChar);
+    }
+    this.longPressInfo = null;
+    this.hoveredChar = null;
+  }
+
   handleKeyPress(key: KeyData): void {
-    // Don't reset timer for emoji panel toggle
     if (key.action !== KeyAction.EMOJI_PANEL) {
       this.resetInactivityTimer();
     }
@@ -744,22 +776,31 @@ struct Index {
     }
   }
 
-  handleClipboardClick(): void {
+  // PASTE CURRENT CLIPBOARD ITEM ONLY
+  private async handleClipboardClick(): Promise<void> {
     this.resetInactivityTimer();
 
     if (this.isRecording) {
       this.handleVoiceInterruption('clipboard');
     }
 
-    // Get the latest item from clipboard history and paste it directly
-    if (this.clipboardHistory.length > 0) {
-      const latestItem = this.clipboardHistory[0];
-      keyboardController.insertText(latestItem);
-      this.onTextTyped(latestItem);
-    }
+    try {
+      const systemPasteboard = pasteboard.getSystemPasteboard();
+      const hasData = systemPasteboard.hasDataSync();
 
-    // Close any open panels
-    this.showEmojiPanel = false;
+      if (hasData) {
+        const data = await systemPasteboard.getData();
+        const text = data.getPrimaryText();
+
+        if (text && text.length > 0) {
+          keyboardController.insertText(text);
+          this.onTextTyped(text);
+          console.info('OpenBoard: Pasted clipboard text');
+        }
+      }
+    } catch (e) {
+      console.error('OpenBoard: Clipboard paste failed', e);
+    }
   }
 
   handleSwipe(direction: LayoutSwipeDirection): void {
@@ -822,6 +863,11 @@ struct Index {
       this.currentWord = this.currentWord.substring(0, this.currentWord.length - 1);
       this.updateSuggestions();
       this.resetInactivityTimer();
+    }
+
+    // Show pre-typing toolbar when all text is deleted
+    if (this.currentWord.length === 0 && this.previousWord === '') {
+      this.showPreTypingToolbar = true;
     }
   }
 
@@ -918,7 +964,7 @@ struct Index {
   @Builder
   buildPreTypingToolbar() {
     Row({ space: 3 }) {
-      // CLOSE ICON - FIXED: Centered layout
+      // CLOSE ICON
       Column() {
         Image($r('app.media.close_icon'))
           .width(18)
@@ -932,7 +978,10 @@ struct Index {
       .backgroundColor(OpenBoardTheme.specialKey)
       .onClick(() => { keyboardController.hideKeyboard(); })
 
-      // CLIPBOARD ICON - FIXED: Now properly centered
+      // LEFT SPACER for centering
+      Flex().layoutWeight(1)
+
+      // CLIPBOARD ICON - CENTERED
       Column() {
         Image($r('app.media.clipboard_icon'))
           .width(20)
@@ -947,7 +996,7 @@ struct Index {
       .backgroundColor(OpenBoardTheme.specialKey)
       .onClick(() => { this.handleClipboardClick(); })
 
-      // EMPTY SPACE - FIXED: Balanced spacing
+      // RIGHT SPACER for centering
       Flex().layoutWeight(1)
 
       // MICROPHONE
@@ -970,7 +1019,7 @@ struct Index {
   @Builder
   buildEmojiToolbar() {
     Row({ space: 3 }) {
-      // RETURN TO KEYBOARD BUTTON - using return icon
+      // RETURN TO KEYBOARD BUTTON
       Column() {
         Image($r('app.media.return_icon'))
           .width(20)
@@ -985,7 +1034,6 @@ struct Index {
       .backgroundColor(OpenBoardTheme.specialKey)
       .onClick(() => {
         this.showEmojiPanel = false;
-        // Don't reset timer when returning from emoji panel
       })
 
       // EMPTY SPACE
@@ -1067,7 +1115,7 @@ struct Index {
             // Toolbar when in emoji tab
             this.buildEmojiToolbar()
           } else if (this.showPreTypingToolbar) {
-            // Toolbar before starting to type and after 8 sec of not typing
+            // Toolbar before starting to type and after 5 sec of not typing
             this.buildPreTypingToolbar()
           } else {
             // Standard toolbar when typing
@@ -1100,6 +1148,8 @@ struct Index {
                       enterKeyLabel: this.enterKeyLabel,
                       onKeyPress: (k: KeyData): void => this.handleKeyPress(k),
                       onKeyLongPress: (k: KeyData, p: Position): void => this.handleLongPress(k, p),
+                      onKeyLongPressDrag: (p: Position): void => this.handleLongPressDrag(p),
+                      onKeyLongPressEnd: (): void => this.handleLongPressEnd(),
                       onKeyContinuousPressStart: (): void => this.handleRapidDeleteStart(),
                       onKeyContinuousPressEnd: (): void => this.handleRapidDeleteEnd(),
                       onSwipe: key.action === KeyAction.Space ? (direction: LayoutSwipeDirection): void => this.handleSwipe(direction) : undefined
@@ -1146,7 +1196,6 @@ struct Index {
                     .onClick(() => {
                       keyboardController.insertText(emoji);
                       this.onTextTyped(emoji);
-                      // Don't reset timer for emoji usage
                     })
                 })
               }
@@ -1186,11 +1235,11 @@ struct Index {
           .zIndex(250)
       }
 
-      // Voice interruption popup - FIXED
+      // Voice interruption popup
       if (this.showInterruptionPopup) {
         VoiceInterruptionPopup({
           message: this.interruptionMessage,
-          popupPosition: this.interruptionPopupPosition // Use renamed prop
+          popupPosition: this.interruptionPopupPosition
         })
           .zIndex(300)
       }
@@ -1206,9 +1255,16 @@ struct Index {
       const commaIndex = lastRow.findIndex(k => k.mainValue === ',' || k.mainValue === '،');
       if (commaIndex !== -1 && lastRow[commaIndex + 1]?.action === KeyAction.Space) {
         lastRow.splice(commaIndex + 1, 0, EMOJI_KEY_DATA);
-        const spaceKey = lastRow[commaIndex + 2];
-        if (spaceKey) {
-          spaceKey.flex = Math.max(spaceKey.flex - EMOJI_KEY_DATA.flex + 0.5, 3.5);
+        const originalSpaceKey = lastRow[commaIndex + 2];
+        if (originalSpaceKey) {
+          const newSpaceKey: KeyData = {
+            mainValue: originalSpaceKey.mainValue,
+            shiftValue: originalSpaceKey.shiftValue,
+            secondaryValue: originalSpaceKey.secondaryValue,
+            action: originalSpaceKey.action,
+            flex: Math.max(originalSpaceKey.flex - EMOJI_KEY_DATA.flex + 0.5, 3.5)
+          };
+          lastRow[commaIndex + 2] = newSpaceKey;
         }
         const newLayout = layout.slice(0, layout.length - 1);
         newLayout.push(lastRow);
@@ -1220,11 +1276,11 @@ struct Index {
     switch (this.keyboardLayout) {
       case KeyboardLayout.Alphabet:
         switch (this.currentLanguage) {
-          case 'ar': return arabicLayout;
+          case 'ar': return insertEmojiKey(arabicLayout);
           case 'en': return insertEmojiKey(englishLayout);
           case 'it': return insertEmojiKey(italianLayout);
           case 'pl': return insertEmojiKey(polishLayout);
-          case 'fa': return insertEmojiKey(persianLayout); // FIXED: Add emoji button to Persian layout
+          case 'fa': return insertEmojiKey(persianLayout);
           default: return insertEmojiKey(englishLayout);
         }
       case KeyboardLayout.Symbols1: return symbolsLayout1;
@@ -1234,28 +1290,35 @@ struct Index {
   }
 
   private getEmojiList(category: string): string[] {
-    // Return a simple emoji list for each category
     switch (category) {
       case 'Smileys & Emotion':
-        return ['😀','😁','😂','🥳','😃','😄','😅','😆','😉','😊','😋','😎','🤩','😍','😘','😗','😙','😚','🤪','🤨'];
+        return ['😀','😁','😂','🤣','😃','😄','😅','😆','😉','😊','😋','😎','🥰','😍','😘','😗','😙','😚','🥲','🥳','🤩','🤗','🤔','🤨','😐','😶','😏','😒','🙄','😬','🤥','😟','😔','😥','🤤','😫','😩','🥺','😭','😤','😮','😱','😳','🤯','🥵','🥶','😴','😵','😷','🤕','🤢','🤮','🤧','😇','😈','👿','👹','👺','💀','👻','👽','🤖','💩','😺','😸','😹','😻','😼','😽','😾','😿','🙀','🫶','👍','👎','✊','👊','🤝','🤞','✌️','🫰','🤟','🤘','👌','🤌','🤏','👈','👉','👆','👇','☝️','✋','🤚','🖐️','S','💪','🙏','✍️','💅','👂','👃','👁️','🧠','🦷','🦴','🗣️','👤','👥','🫂'];
       case 'People':
-        return ['👋','🤚','🖐️','✋','🖖','👌','🤌','🤏','✌️','🤞','🤟','🤘','🤙','👈','👉','👆','🖕','👇','☝️','👍'];
+        // Ludzie, części ciała, zawody, rodziny
+        return ['👶','👧','🧒','👦','👩','🧑','👨','👵','🧓','👴','👱‍♀️','👱','👱‍♂️','👮‍♀️','👮','👮‍♂️','👷‍♀️','👷','👷‍♂️','🧑‍⚕️','👨‍⚕️','👩‍⚕️','🧑‍🎓','👨‍🎓','👩‍🎓','🧑‍🏫','👨‍🏫','👩‍🏫','🧑‍⚖️','👨‍⚖️','👩‍⚖️','🧑‍🌾','👨‍🌾','👩‍🌾','🧑‍🍳','👨‍🍳','👩‍🍳','🧑‍🔧','👨‍🔧','👩‍🔧','🧑‍🏭','👨‍🏭','👩‍🏭','🧑‍💼','👨‍💼','👩‍💼','🧑‍🔬','👨‍🔬','👩‍🔬','🧑‍💻','👨‍💻','👩‍💻','🧑‍🎤','👨‍🎤','👩‍🎤','🧑‍🎨','👨‍🎨','👩‍🎨','🧑‍✈️','👨‍✈️','👩‍✈️','🧑‍🚀','👨‍🚀','👩‍🚀','🧑‍🚒','👨‍🚒','👩‍🚒','💂‍♀️','💂','💂‍♂️','🕵️‍♀️','🕵️','🕵️‍♂️','🥷','🤵‍♀️','🤵','🤵‍♂️','👰‍♀️','👰','👰‍♂️','🤰','🤱','🧑‍🍼','👨‍🍼','👩‍🍼','👼','🎅','🤶','🧑‍🎄','🦸‍♀️','🦸','🦸‍♂️','🦹‍♀️','🦹','🦹‍♂️','🧙‍♀️','🧙','🧙‍♂️','🧚‍♀️','🧚','🧚‍♂️','🧛‍♀️','🧛','🧛‍♂️','🧜‍♀️','🧜','🧜‍♂️','🧝‍♀️','🧝','🧝‍♂️','🧞‍♀️','🧞','🧞‍♂️','🧟‍♀️','🧟','🧟‍♂️','🚶‍♀️','🚶','🚶‍♂️','🏃‍♀️','🏃','🏃‍♂️','🕺','💃','🧑‍🦽','👨‍🦽','👩‍🦽','🧑‍🦼','👨‍🦼','👩‍🦼','🧍‍♀️','🧍','🧍‍♂️',' sitting','🧎‍♀️','🧎','🧎‍♂️',' kneeling','🧑‍🦯','👨‍🦯','👩‍🦯','🧑‍ standing','👨‍ standing','👩‍ standing','👩‍❤️‍👨','👨‍❤️‍👨','👩‍❤️‍👩','familia','💋','💘','💝','💖','💗','💓','💞','💕','🧡','💛','💚','💙','💜','🤎','🖤','🤍','💯','💢','💥','💫','💦','💨','💬','👁️‍🗨️','💭','💡','🔥'];
       case 'Animals & Nature':
-        return ['🐵','🐒','🦍','🦧','🐶','🐕','🦮','🐩','🐺','🦊','🦝','🐱','🐈','🐈‍⬛','🦁','🐯','🐅','🐆','🐴','🐎'];
+        // Zwierzęta, rośliny, pogoda, krajobrazy
+        return ['🐶','🐱','🐭','🐹','🐰','🦊','🐻','🐼','🐨','🐯','🦁','🐮','🐷','🐽','🐸','🐵','🐒','🦍','🐔','🐧','🐦','🐤','🐣','🐥','🦆','🦢','🦅','🦉','🦩',' peacock',' parrot','🕊️','🐺','🐗','🐴','🦓','🦌','🦏',' hippopotamus','🦒','🐪','🐫','🐘','🦥','🦦','🦨','🦔','🐿️','🐁','🐀','🐇','🐈','🐉','🐲','🐊','🐢','🐍','🦎','🦖','🦕','🐋','🐳','🐬','🐠','🐡','🦈','🐙','🦑','🦐','🦀','🦞',' snail','🦋','🐛','🐜','🐝','🐞','🦗','🕷️','🦂','🦠','💐','🌸','🌼','🌻','🌷','🌹','🥀','🌺','🪴','🌲','🌳','🌴','🌵','🌾','🌿','☘️','🍀','🍁','🍂','🍃','🍄','🌰','🌎','🌍','🌏','🌑','🌕','🌓','🌔','🌖','🌗','🌘','🌙','⭐','🌟','✨','⚡','🔥','☀️','🌤️','⛅','🌥️','🌦️','☁️','🌨️','🌧️','⛈️','🌩️','❄️','⛄','🌬️','💨','🌪️','🌀','🌈','🌊','💧','☔','☂️','💦'];
       case 'Food & Drink':
-        return ['🍎','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍈','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥑','🥦'];
+        // Owoce, warzywa, dania, słodycze, napoje
+        return ['🍎','🍏','🍐','🍊','🍋','🍌','🍉','🍇','🍓','🫐','🍒','🍑','🥭','🍍','🥥','🥝','🍅','🍆','🥕','🌽','🌶️','🥒','🥦','🫑','🧅','🧄','🥔','🍠','🥐','🍞','🥖','🥨','🥯','🥞','🧇','🧀','🥩','🍗','🍖','🥓','🍔','🍟','🍕','🌭','🥪','🌮','🌯','🥙','🥚','🍳','🥘','🍲','🥣','🥗',' popcorn','🧈','🧂','🥫','🍱','🍙','🍚','🍘','🍥','🍣','🍤','🍜','🍝','🍛','🍠','🍢','🍡','🥟','🥠','🥡','🍦','🍧','🍨','🍩','🍪','🎂','🍰','🧁','🥧','🍫','🍬','🍭','🍮','🍯','🍼','🥛','☕','🍵','🥤','🧋','🫗','🍺','🍻','🍷','🥂','🍾','🥃','🍸','🍹','🍶','🧊','🥣','🍴','🥄','🥢','🥡','🧧'];
       case 'Activity & Event':
-        return ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🥏','🎱','🪀','🏓','🏸','🏒','🏑','🥍','🏏','🎿','⛷️','🏂'];
+        // Sport, hobby, muzyka, święta, wydarzenia
+        return ['⚽','🏀','🏈','⚾','🥎','🎾','🏐','🏉','🎱','🏓',' badminton','🥊','🥋','⛸️','🎿','🏂','⛷️','🏹','🎯','🎳','⛳','🎣','🏊‍♂️','🚴‍♂️','🏃‍♂️','🚶‍♂️','🩰','🎤','🎧','🎼','🎹','🥁','🎸','🎺','🎻','🎬','🎭','🖼️','🎨','🧵','🧶','🎲','♟️','🧩','🧸','🎮','🕹️','🎰','🎡','🎢','🎠','🎊','🎉','🎁','🎈','🎀','🎗️','🎟️','🎫','🎖️','🏆','🏅','🥇','🥈','🥉','🔔','🎄','🎅','🎃','👻','🎂','💍','💎','💰','💲','💸','💵','💶','💷','💴','💳','🧾','🔗','🔒','🔓','🔑'];
       case 'Travel & Places':
-        return ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🛻','🚚','🚛','🚜','🏍️','🛵','🚲','🛴','🛹','🛼'];
+        // Pojazdy, miejsca, budynki
+        return ['🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🚚','🚛','🚜','🏍️','🛵','🚲','🛴','🚨','⛽','🛣️','🛤️','🚏','🚦','🚥','🚧','anchor','🚢','⛴️','🚤','🛥️','🛳️','🚀','🛸','🚁','🚂','🚃','🚋','🚌','🚆','🚇','🚊','🚉','✈️','🛫','🛬','💺','🏨','motel','house','🏠','🏡','🏘️','🏚️','🏗️','🏢','🏭','🏬','🏣','郵','🏦','🏥','🏫','🏤','⛪','🕌','🕍','🕋',' fountain','⛲','🗼',' statue of liberty','🗾','🌋',' mount fuji','🗻',' at the sea','🏖️','desert','island','⛺','🌃','🏙️','🌄','🌅','🌇','🌆','🌉',' Milky Way','🌠','🎇','🎆'];
       case 'Objects':
-        return ['⌚','📱','📲','💻','⌨️','🖥️','🖨️','🖱️','🖲️','💽','💾','💿','📀','📼','📷','📸','📹','🎥','📽️','🎞️'];
+        // Przedmioty, narzędzia, ubrania, elektronika
+        return ['⌚','📱','💻','⌨️','🖨️','🖱️','📷','📸','📹','📼','💿','📀','📻','📺','📞','📠','🔋','🔌','💡','🔦','🕯️','🗑️','🛒','✉️','📧','📩','📨','📤','📥','📦','📫','📪','📬','📭','📮','📜','📃','📄','📑','📅','🗓️','📇','📈','📉','📊','📋','📌','📍','📎','🖇️','📏','📐','✂️','🪚','🔨','⛏️','🪓','🔪','🔫','🩺','🧪','🌡️','💉','💊','🩹','🚪','🪑','🛋️','🛏️','🛀','🧼','🧽','🧺','🚽','🚿','🛁','🪠','🧴','👚','👕','👖','👔','👗','👙','👘','🥻','🩱','🩲','🩳','🧥','🥼','🧣','🧤','🧢','👒','🎓','👑','💍','💎','💄','💅','🪮','🪒','🪥','🪣','🪤','🪟','🪜','🪞','🪚','🪛','🛠️','⚙️','🧱','⛓️','🔗','📏','🧮'];
       case 'Symbols':
-        return ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❣️','💕','💞','💓','💗','💖','💘','💝','💟','☮️'];
+        // Znaki, strzałki, cyfry, emotikony tekstowe
+        return ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💔','❗️','❓','‼️','⁉️','✅','❌','✔️','✖️','➕','➖','➗','♾️','©️','®️','™️','℠','®️','™️','©️','®️','™️','℠','#️⃣','*️⃣','0️⃣','1️⃣','2️⃣','3️⃣','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟','⬆️','⬇️','⬅️','➡️','↖️','↗️','↘️','↙️','↕️','↔️','↩️','↪️','⤴️','⤵️','🔄','◀️','▶️','🔼','🔽','⏏️','➿','♻️','⚜️','🔱','⚠️','⛔','🚫','🚭','🚳','🚱','🚷','📵','🔞',' P','🅿️','🚸','🈯','🈚','🈶','🈲','🈹','🈺','🈷️','🈂️','🉑','🈴','🈳','㊗️','㊙️','❌','⭕','🛑','⛑️','👑','🔑','🔔','🔕','🎶','🎵','➕','➖','➗','✖️','➿','✔️','☑️','✅','⭕','❌','🛑','⚠️','❗','❓'];
       case 'Flags':
-        return ['🏳️','🏴','🏴‍☠️','🏁','🚩','🏳️‍🌈','🏳️‍⚧️','🇺🇳','🇦🇫','🇦🇽','🇦🇱','🇩🇿','🇦🇸','🇦🇩','🇦🇴','🇦🇮','🇦🇶','🇦🇬','🇦🇷','🇦🇲'];
+        // Wybrane flagi
+        return ['🏳️','🏴','🏁','🚩','🇦🇫','🇦🇽','🇦🇱','🇩🇿','🇦🇸','🇦🇩','🇦🇴','🇦🇮','🇦🇶','🇦🇬','🇦🇷','🇦🇲','🇦🇼','🇦🇺','🇦🇹','🇦🇿','🇧🇸','🇧🇭','🇧🇩','🇧🇧','🇧🇾','🇧🇪','🇧🇿','🇧🇯','🇧🇲','🇧🇹','🇧🇴','🇧🇦','🇧🇼','🇧🇷','🇮🇴','🇻🇬','🇧🇳','🇧🇬','🇧🇫','🇧🇮','🇰🇭','🇨🇲','🇨🇦','🇮🇨','🇨🇻','🇧🇶','🇰🇾','🇨🇫','🇹🇩','🇨🇱','🇨🇳','🇨🇽','🇨🇨','🇨🇴','🇰🇲','🇨🇬','🇨🇩','🇨🇰','🇨🇷','🇭🇷','🇨🇺','🇨🇼','🇨🇾','🇨🇿','🇩🇰','🇩🇯','🇩🇲','🇩🇴','🇪🇨','🇪🇬','🇸🇻','🇬🇶','🇪🇷','🇪🇪','🇸🇿','🇪🇹','🇪🇺','🇫🇰','🇫🇴','🇫🇯','🇫🇮','🇫🇷','🇬🇫','🇵🇫','🇹🇫','🇬🇦','🇬🇲','🇬🇪','🇩🇪','🇬🇭','🇬🇮','🇬🇷','🇬🇱','🇬🇩','🇬🇵','🇬🇺','🇬🇹','🇬🇬','🇬🇳','🇬🇼','🇬🇾','🇭🇹','🇭🇳','🇭🇰','🇭🇺','🇮🇸','🇮🇳','🇮🇩','🇮🇷','🇮🇶','🇮🇪','🇮🇲','🇮🇱','🇮🇹','🇯🇲','🇯🇵','🇯🇪','🇯🇴','🇰🇿','🇰🇪','🇰🇮','🇽🇰','🇰🇼','🇰🇬','🇱🇦','🇱🇻','🇱🇧','🇱🇸','🇱🇷','🇱🇾','🇱🇮','🇱🇹','🇱🇺','🇲🇴','🇲🇬','🇲🇼','🇲🇾','🇲🇻','🇲🇱','🇲🇹','🇲🇭','🇲🇶','🇲🇷','🇲🇺','🇾🇹','🇲🇽','🇫🇲','🇲🇩','🇲🇨','🇲🇳','🇲🇪','🇲🇸','🇲🇦','🇲🇿','🇲🇲','🇳🇦','🇳🇷','🇳🇵','🇳🇱','🇳🇨','🇳🇿','🇳🇮','🇳🇪','🇳🇬','🇳🇺','🇳🇫','🇰🇵','🇲🇰','🇲🇵','🇳🇴','🇴🇲','🇵🇰','🇵🇼','🇵🇸','🇵🇦','🇵🇬','🇵🇾','🇵🇪','🇵🇭','🇵🇳','🇵🇱','🇵🇹','🇵🇷','🇶🇦','🇷🇪','🇷🇴','🇷🇺','🇷🇼','🇸🇽','🇼🇸','🇸🇲','🇸🇹','🇸🇦','🇸🇳','🇷🇸','🇸🇨','🇸🇱','🇸🇬','🇸🇰','🇸🇮','🇸🇧','🇸🇴','🇿🇦','🇬🇸','🇰🇷','🇸🇸','🇪🇸','🇱🇰','🇸🇩','🇸🇷','🇸🇯','🇸🇪','🇨🇭','🇸🇾','🇹🇼','🇹🇯','🇹🇿','🇹🇭','🇹🇱','🇹🇬','🇹🇰','🇹🇴','🇹🇹','🇹🇳','🇹🇷','🇹🇲','🇹🇨','🇹🇻','🇺🇬','🇺🇦','🇦🇪','🇬🇧','🇺🇸','🇺🇾','🇺🇿','🇻🇺','🇻🇦','🇻🇪','🇻🇳','🇼🇫','🇪🇭','🇾🇪','🇿🇲','🇿🇼'];
       default:
-        return ['😀','😁','😂','🥳'];
+        return ['🙂','😊','😂','🤣'];
     }
   }
 }
