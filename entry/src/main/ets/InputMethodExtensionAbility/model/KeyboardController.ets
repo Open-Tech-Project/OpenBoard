@@ -10,6 +10,8 @@ export class KeyboardController {
   private textInputClient: inputMethodEngine.InputClient | undefined = undefined;
   private currentEnterKeyType: number = inputMethodEngine.ENTER_KEY_TYPE_UNSPECIFIED;
   private enterKeyTypeCallback?: (enterKeyType: number) => void;
+  private textBufferCache: string = '';
+  private cursorPosition: number = 0;
 
   constructor() {}
 
@@ -21,9 +23,12 @@ export class KeyboardController {
   }
 
   public onDestroy(): void {
-    this.unRegisterListener();
+    this.unregisterListener();
     this.textInputClient = undefined;
     this.currentEnterKeyType = inputMethodEngine.ENTER_KEY_TYPE_UNSPECIFIED;
+    this.textBufferCache = '';
+    this.cursorPosition = 0;
+
     if (this.panel) {
       try {
         inputMethodAbility.destroyPanel(this.panel);
@@ -62,6 +67,7 @@ export class KeyboardController {
     if (this.textInputClient) {
       try {
         this.textInputClient.insertText(text);
+        this.updateCacheOnInsert(text);
       } catch (err) {
         const error = err as BusinessError;
         console.error(`OpenBoard Keyboard: Failed to insert text. Code: ${error.code}, Msg: ${error.message}`);
@@ -73,6 +79,7 @@ export class KeyboardController {
     if (this.textInputClient) {
       try {
         this.textInputClient.deleteForward(length);
+        this.updateCacheOnDeleteForward(length);
       } catch (err) {
         const error = err as BusinessError;
         console.error(`OpenBoard Keyboard: Failed to delete forward. Code: ${error.code}, Msg: ${error.message}`);
@@ -84,6 +91,7 @@ export class KeyboardController {
     if (this.textInputClient) {
       try {
         this.textInputClient.deleteBackward(length);
+        this.updateCacheOnDeleteBackward(length);
       } catch (err) {
         const error = err as BusinessError;
         console.error(`OpenBoard Keyboard: Failed to delete backward. Code: ${error.code}, Msg: ${error.message}`);
@@ -95,11 +103,13 @@ export class KeyboardController {
     if (this.textInputClient) {
       try {
         this.textInputClient.sendKeyFunction(this.currentEnterKeyType);
+        this.updateCacheOnInsert('\n');
       } catch (err) {
         const error = err as BusinessError;
         console.error(`OpenBoard Keyboard: Failed to send enter key. Code: ${error.code}, Msg: ${error.message}`);
         try {
           this.textInputClient.insertText('\n');
+          this.updateCacheOnInsert('\n');
         } catch (insertErr) {
           const insertError = insertErr as BusinessError;
           console.error(`OpenBoard Keyboard: Failed to insert newline. Code: ${insertError.code}, Msg: ${insertError.message}`);
@@ -114,6 +124,64 @@ export class KeyboardController {
 
   public setEnterKeyTypeCallback(callback: (enterKeyType: number) => void): void {
     this.enterKeyTypeCallback = callback;
+  }
+
+  public getTextBeforeCursor(maxLength: number): string {
+    const start = Math.max(0, this.cursorPosition - maxLength);
+    return this.textBufferCache.slice(start, this.cursorPosition);
+  }
+
+  public isBufferEmpty(): boolean {
+    return this.textBufferCache.length === 0;
+  }
+
+  private updateCacheOnInsert(text: string): void {
+    this.textBufferCache =
+      this.textBufferCache.slice(0, this.cursorPosition) +
+        text +
+      this.textBufferCache.slice(this.cursorPosition);
+    this.cursorPosition += text.length;
+  }
+
+  private updateCacheOnDeleteForward(length: number): void {
+    this.textBufferCache =
+      this.textBufferCache.slice(0, this.cursorPosition) +
+      this.textBufferCache.slice(this.cursorPosition + length);
+  }
+
+  private updateCacheOnDeleteBackward(length: number): void {
+    this.textBufferCache =
+      this.textBufferCache.slice(0, this.cursorPosition - length) +
+      this.textBufferCache.slice(this.cursorPosition);
+    this.cursorPosition = Math.max(0, this.cursorPosition - length);
+  }
+
+  private async syncInitialBuffer(): Promise<void> {
+    if (!this.textInputClient) return;
+
+    try {
+      const initialText = await this.queryTextFromIME();
+      this.textBufferCache = initialText;
+      this.cursorPosition = initialText.length;
+      console.info(`OpenBoard Keyboard: Initial buffer synced, length: ${initialText.length}`);
+    } catch (err) {
+      console.warn('OpenBoard Keyboard: Could not sync initial buffer, starting empty');
+      this.textBufferCache = '';
+      this.cursorPosition = 0;
+    }
+  }
+
+  private queryTextFromIME(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      if (!this.textInputClient) {
+        reject(new Error('No input client'));
+        return;
+      }
+
+      // Simple approach - skip initial text sync for now
+      console.warn('OpenBoard Keyboard: Text query not available in this version');
+      resolve('');
+    });
   }
 
   private initWindow(): void {
@@ -167,9 +235,10 @@ export class KeyboardController {
   }
 
   private registerInputListener(): void {
-    inputMethodAbility.on('inputStart', (_, textInputClient) => {
+    inputMethodAbility.on('inputStart', async (_, textInputClient) => {
       this.textInputClient = textInputClient;
       this.updateEnterKeyType();
+      await this.syncInitialBuffer();
       this.hideIfDestroyedAndRecreate();
     });
     inputMethodAbility.on('inputStop', this.inputStopCallback);
@@ -199,8 +268,7 @@ export class KeyboardController {
         }
       });
     } catch (err) {
-      const error = err as BusinessError;
-      console.error(`OpenBoard Keyboard: Failed to call getEditorAttribute. Code: ${error.code}, Msg: ${error.message}`);
+      console.error(`OpenBoard Keyboard: Failed to call getEditorAttribute: ${err}`);
       this.currentEnterKeyType = inputMethodEngine.ENTER_KEY_TYPE_UNSPECIFIED;
     }
   }
@@ -208,11 +276,13 @@ export class KeyboardController {
   private inputStopCallback = (): void => {
     console.info('OpenBoard Keyboard: Input stopped');
     this.textInputClient = undefined;
+    this.textBufferCache = '';
+    this.cursorPosition = 0;
     this.currentEnterKeyType = inputMethodEngine.ENTER_KEY_TYPE_UNSPECIFIED;
   };
 
-  private unRegisterListener(): void {
-    inputMethodAbility.off('inputStart');
+  private unregisterListener(): void {
+    inputMethodAbility.off('inputStart', this.registerInputListener);
     inputMethodAbility.off('inputStop', this.inputStopCallback);
   }
 }
