@@ -865,9 +865,13 @@ struct Index {
       this.resetInactivityTimer();
     }
 
-    // Show pre-typing toolbar when all text is deleted
-    if (this.currentWord.length === 0 && this.previousWord === '') {
+    if (keyboardController.isBufferEmpty()) {
+      this.previousWord = '';
+      this.currentWord = '';
+      this.updateSuggestions();
       this.showPreTypingToolbar = true;
+    } else {
+      this.showPreTypingToolbar = false;
     }
   }
 
